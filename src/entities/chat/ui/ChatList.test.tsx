@@ -17,4 +17,10 @@ describe('ChatList', () => {
     fireEvent.click(screen.getByRole('button', { name: /Иван/ }))
     expect(onSelect).toHaveBeenCalledWith('chat-1')
   })
+
+  it('не показывает доставленное последнее сообщение как прочитанное', () => {
+    render(<ChatList activeChatId="" onSelect={vi.fn()} chats={[{ id: 'chat-1', name: 'Иван', initials: 'И', color: '#fff', last: 'Привет', time: '12:00', unread: 0, lastMine: true, lastStatus: 'delivered' }]} />)
+
+    expect(screen.getByTitle('Доставлено')).toHaveTextContent('✓')
+  })
 })

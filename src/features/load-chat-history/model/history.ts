@@ -29,7 +29,7 @@ export function toChatPreviews(journal: GreenApiJournalMessage[]): ChatPreview[]
     const current = latestByChatId.get(message.chatId)
     if (!current || (message.timestamp || 0) > (current.timestamp || 0)) latestByChatId.set(message.chatId, message)
   })
-  return [...latestByChatId.entries()].map(([chatId, message]) => ({ chatId, text: getText(message), time: formatHistoryTime(message.timestamp), timestamp: message.timestamp || 0 }))
+  return [...latestByChatId.entries()].map(([chatId, message]) => ({ chatId, text: getText(message), time: formatHistoryTime(message.timestamp), timestamp: message.timestamp || 0, mine: message.type === 'outgoing', status: getStatus(message), externalId: message.idMessage }))
 }
 
 export function toIncomingJournalMessages(journal: GreenApiJournalMessage[]): IncomingMessage[] {

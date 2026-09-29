@@ -18,4 +18,21 @@ describe('chat model', () => {
     const result = applyChatPreviews(chats, [{ chatId: '1', text: 'Новое превью', time: '11:00', timestamp: 1 }])
     expect(result[0]).toMatchObject({ last: 'Новое превью', time: '11:00' })
   })
+
+  it('не откатывает статус прочтения устаревшим статусом из журнала', () => {
+    const readChat: Chat[] = [{ ...chats[0], lastMine: true, lastStatus: 'read', lastExternalId: 'message-1' }]
+
+    const result = applyChatPreviews(readChat, [{ chatId: '1', text: 'Старый статус', time: '11:00', timestamp: 1, mine: true, status: 'delivered', externalId: 'message-1' }])
+
+    expect(result[0].lastStatus).toBe('read')
+  })
+
+  it('может обновить старое превью, не меняя порядок списка', () => {
+    const multipleChats: Chat[] = [chats[0], { ...chats[0], id: '2', name: 'Мария' }]
+
+    const result = applyChatPreviews(multipleChats, [{ chatId: '2', text: 'Старое сообщение', time: '10:00', timestamp: 1 }], false)
+
+    expect(result.map((chat) => chat.id)).toEqual(['1', '2'])
+    expect(result[1].last).toBe('Старое сообщение')
+  })
 })

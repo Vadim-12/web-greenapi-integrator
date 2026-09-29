@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useMutation } from '@tanstack/react-query'
 import { applyChatPreviews, applyIncomingMessage, createChat, markChatRead } from '@/entities/chat/model/chat-model'
 import { demoChats } from '@/entities/chat/model/fixtures'
 import type { Chat, IncomingMessage } from '@/entities/chat/model/types'
@@ -12,7 +13,7 @@ import { useNotificationPolling } from '@/features/receive-notifications/model/u
 import type { OutgoingMessageStatus } from '@/features/receive-notifications/model/types'
 import { messengerById } from '@/shared/config/messengers'
 import { GreenApiClient } from '@/shared/api/green-api/client'
-import type { GreenApiChat } from '@/shared/api/green-api/types'
+import type { GreenApiChat, GreenApiJournalMessage } from '@/shared/api/green-api/types'
 import { createId } from '@/shared/lib/id/createId'
 import { createDemoChatId, isDemoChatId } from '@/shared/lib/messenger/demoChatId'
 import { formatCurrentTime } from '@/shared/lib/time/formatCurrentTime'
@@ -40,11 +41,29 @@ function createInitialWorkspaces(): MessengerWorkspaces {
 const demoReadDelay = 700
 const loadingWatchdogDelay = 8500
 const journalSyncInterval = 7000
+const chatSyncInterval = 30_000
+const initialJournalLookbackMinutes = 525_600
+const previewHydrationDelay = 1_100
 
 function toChat(item: GreenApiChat): Chat | null {
   const id = item.chatId || item.id
   if (!id) return null
-  return { ...createChat(id, item.name || id), unread: item.unreadCount || 0 }
+  return { ...createChat(id, item.name || id), type: item.type, unread: item.unreadCount || 0 }
+}
+
+function mergeRemoteChats(currentChats: Chat[], remoteChats: Chat[]): Chat[] {
+  const currentById = new Map(currentChats.map((chat) => [chat.id, chat]))
+  const remoteById = new Map(remoteChats.map((chat) => [chat.id, chat]))
+  const mergeChat = (remoteChat: Chat) => {
+    const current = currentById.get(remoteChat.id)
+    return current ? { ...remoteChat, ...current, name: remoteChat.name, initials: remoteChat.initials, color: remoteChat.color, type: remoteChat.type } : remoteChat
+  }
+  const existingChats = currentChats.flatMap((chat) => {
+    const remoteChat = remoteById.get(chat.id)
+    return remoteChat ? [mergeChat(remoteChat)] : []
+  })
+  const newChats = remoteChats.filter((chat) => !currentById.has(chat.id)).map(mergeChat)
+  return [...existingChats, ...newChats]
 }
 
 function hasSameSettings(left: ConnectionSettings, right: ConnectionSettings): boolean {
@@ -58,12 +77,18 @@ export function useMessenger() {
   const [createChatOpen, setCreateChatOpen] = useState(false)
   const lastTypingAt = useRef(0)
   const knownJournalMessageIds = useRef(new Set<string>())
+  const requestedAvatarChatIds = useRef(new Set<string>())
   const workspace = workspaces[messengerId]
+  const workspaceRef = useRef(workspace)
   const messenger = messengerById[messengerId]
   const client = useMemo(() => workspace.connected && isConfigured(workspace.settings) ? new GreenApiClient(workspace.settings) : null, [workspace.connected, workspace.settings])
+  const sendTextMutation = useMutation({ mutationFn: ({ chatId, text }: { chatId: string; text: string }) => client ? client.sendMessage(chatId, text) : Promise.reject(new Error('API не подключён')) })
+  const sendFileMutation = useMutation({ mutationFn: ({ chatId, file }: { chatId: string; file: File }) => client ? client.sendFile(chatId, file) : Promise.reject(new Error('API не подключён')) })
   const activeChat = workspace.chats.find((chat) => chat.id === workspace.activeChatId) || null
   const visibleChats = workspace.chats.filter((chat) => chat.name.toLowerCase().includes(workspace.search.toLowerCase()))
   const updateWorkspace = useCallback((updater: (current: MessengerWorkspace) => MessengerWorkspace) => setWorkspaces((current) => ({ ...current, [messengerId]: updater(current[messengerId]) })), [messengerId])
+
+  useEffect(() => { workspaceRef.current = workspace }, [workspace])
 
   useEffect(() => {
     saveConnectionSettings({ telegram: workspaces.telegram.settings, whatsapp: workspaces.whatsapp.settings, max: workspaces.max.settings })
@@ -73,6 +98,7 @@ export function useMessenger() {
   const onOutgoingStatus = useCallback((status: OutgoingMessageStatus) => updateWorkspace((current) => ({
     ...current,
     messages: updateMessageStatusByExternalId(current.messages, status.chatId, status.messageId, status.status),
+    chats: current.chats.map((chat) => chat.id === status.chatId && chat.lastExternalId === status.messageId ? { ...chat, lastStatus: status.status } : chat),
     notice: status.status === 'error' ? `Сообщение не доставлено: ${status.description || 'Telegram отклонил отправку.'}` : current.notice,
   })), [updateWorkspace])
   const onPollingError = useCallback((message: string) => updateWorkspace((current) => ({ ...current, connected: false, isChatsLoading: false, isHistoryLoading: false, notice: `Не удалось получить уведомления: ${message}` })), [updateWorkspace])
@@ -81,20 +107,29 @@ export function useMessenger() {
   useEffect(() => {
     if (!client) return undefined
     let cancelled = false
+    requestedAvatarChatIds.current.clear()
+    const syncChats = async (isInitialLoad = false) => {
+      try {
+        const items = await client.getChats()
+        if (cancelled) return
+        const chats = items.map(toChat).filter((chat): chat is Chat => Boolean(chat))
+        updateWorkspace((current) => ({
+          ...current,
+          isChatsLoading: false,
+          chats: mergeRemoteChats(current.chats, chats),
+          notice: isInitialLoad ? chats.length ? 'Выберите чат, чтобы открыть диалог.' : 'В API пока нет доступных чатов.' : current.notice,
+        }))
+      } catch (error) {
+        if (!cancelled && isInitialLoad) updateWorkspace((current) => ({ ...current, isChatsLoading: false, notice: `Не удалось загрузить список чатов: ${error instanceof Error ? error.message : 'неизвестная ошибка'}` }))
+      }
+    }
     const watchdogId = window.setTimeout(() => {
       if (!cancelled) updateWorkspace((current) => current.isChatsLoading ? { ...current, isChatsLoading: false, notice: 'Не удалось дождаться списка чатов. Проверьте доступность API и попробуйте подключиться ещё раз.' } : current)
     }, loadingWatchdogDelay)
-    void client.getChats()
-      .then((items) => {
-        if (cancelled) return
-        const chats = items.map(toChat).filter((chat): chat is Chat => Boolean(chat))
-        updateWorkspace((current) => ({ ...current, isChatsLoading: false, chats, messages: {}, activeChatId: '', notice: chats.length ? `Загружено чатов: ${chats.length}. Выберите чат, чтобы загрузить историю.` : 'В API пока нет доступных чатов.' }))
-      })
-      .catch((error) => {
-        if (!cancelled) updateWorkspace((current) => ({ ...current, isChatsLoading: false, notice: `Не удалось загрузить список чатов: ${error instanceof Error ? error.message : 'неизвестная ошибка'}` }))
-      })
-    return () => { cancelled = true; window.clearTimeout(watchdogId) }
-  }, [client, updateWorkspace])
+    void syncChats(true)
+    const intervalId = window.setInterval(() => { void syncChats() }, chatSyncInterval)
+    return () => { cancelled = true; window.clearTimeout(watchdogId); window.clearInterval(intervalId) }
+  }, [client, messengerId, updateWorkspace])
 
   useEffect(() => {
     if (!client) return undefined
@@ -103,7 +138,7 @@ export function useMessenger() {
     knownJournalMessageIds.current = new Set()
     const syncJournal = async () => {
       try {
-        const journal = await client.getRecentMessages()
+        const journal = await client.getRecentMessages(initialized ? undefined : initialJournalLookbackMinutes)
         if (cancelled) return
         const incoming = toIncomingJournalMessages(journal)
         const newMessages = incoming.filter((message) => !knownJournalMessageIds.current.has(message.id as string))
@@ -128,6 +163,33 @@ export function useMessenger() {
   }, [client, updateWorkspace])
 
   useEffect(() => {
+    if (!client || !workspace.chats.length) return undefined
+    let cancelled = false
+    const hydrateMissingPreviews = async () => {
+      const chatsWithoutPreview = workspaceRef.current.chats.filter((chat) => chat.last === 'Начните диалог')
+      const hydratedMessages: GreenApiJournalMessage[] = []
+      for (const chat of chatsWithoutPreview) {
+        if (cancelled) return
+        try {
+          const history = await client.getChatHistory(chat.id, 1)
+          const lastMessage = history[0]
+          if (lastMessage) hydratedMessages.push({ ...lastMessage, chatId: chat.id })
+        } catch {
+          // This chat may be unavailable to the instance; leave the neutral empty preview.
+        }
+        await new Promise<void>((resolve) => window.setTimeout(resolve, previewHydrationDelay))
+      }
+      if (!cancelled && hydratedMessages.length) updateWorkspace((current) => ({
+        ...current,
+        chats: applyChatPreviews(current.chats, toChatPreviews(hydratedMessages), false),
+      }))
+    }
+
+    void hydrateMissingPreviews()
+    return () => { cancelled = true }
+  }, [client, messengerId, updateWorkspace, workspace.chats.length])
+
+  useEffect(() => {
     const chatId = workspace.activeChatId
     if (!client || !chatId || isDemoChatId(messengerId, chatId)) return undefined
     let cancelled = false
@@ -136,7 +198,13 @@ export function useMessenger() {
     }, loadingWatchdogDelay)
     void client.getChatHistory(chatId)
       .then((history) => {
-        if (!cancelled) updateWorkspace((current) => ({ ...current, isHistoryLoading: false, messages: { ...current.messages, [chatId]: toMessages(history) }, notice: `Загружена история чата: ${history.length} сообщений.` }))
+        if (!cancelled) updateWorkspace((current) => ({
+          ...current,
+          isHistoryLoading: false,
+          chats: applyChatPreviews(current.chats, toChatPreviews(history.map((message) => ({ ...message, chatId }))), false),
+          messages: { ...current.messages, [chatId]: toMessages(history) },
+          notice: history.length ? `Показаны последние ${history.length} сообщений.` : 'В этом чате пока нет сообщений.',
+        }))
       })
       .catch((error) => {
         if (!cancelled) updateWorkspace((current) => ({ ...current, isHistoryLoading: false, notice: `Не удалось загрузить историю: ${error instanceof Error ? error.message : 'неизвестная ошибка'}` }))
@@ -144,16 +212,50 @@ export function useMessenger() {
     return () => { cancelled = true; window.clearTimeout(watchdogId) }
   }, [client, messengerId, updateWorkspace, workspace.activeChatId])
 
+  useEffect(() => {
+    const chatId = workspace.activeChatId
+    if (!client || !chatId || isDemoChatId(messengerId, chatId) || requestedAvatarChatIds.current.has(chatId)) return undefined
+    requestedAvatarChatIds.current.add(chatId)
+    let cancelled = false
+
+    void client.getAvatar(chatId)
+      .then((avatarUrl) => {
+        if (!cancelled) updateWorkspace((current) => ({
+          ...current,
+          chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, avatarUrl } : chat),
+        }))
+      })
+      .catch(() => {
+        if (!cancelled) updateWorkspace((current) => ({
+          ...current,
+          chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, avatarUrl: null } : chat),
+        }))
+      })
+
+    return () => { cancelled = true }
+  }, [client, messengerId, updateWorkspace, workspace.activeChatId])
+
   function selectMessenger(nextId: MessengerId) { setMessengerId(nextId); setSettingsOpen(false); setCreateChatOpen(false) }
-  function selectChat(chatId: string) { updateWorkspace((current) => ({ ...current, activeChatId: chatId, isHistoryLoading: current.connected && !isDemoChatId(messengerId, chatId), chats: markChatRead(current.chats, chatId) })) }
+  function selectChat(chatId: string) {
+    updateWorkspace((current) => {
+      if (current.activeChatId === chatId) return current
+      return {
+        ...current,
+        activeChatId: chatId,
+        isHistoryLoading: current.connected && !isDemoChatId(messengerId, chatId),
+        chats: markChatRead(current.chats, chatId),
+      }
+    })
+  }
   function setSearch(search: string) { updateWorkspace((current) => ({ ...current, search })) }
   function connect(settings: ConnectionSettings) { updateWorkspace((current) => current.connected && hasSameSettings(current.settings, settings) ? current : { ...current, settings, connected: true, isChatsLoading: true, isHistoryLoading: false, chats: [], messages: {}, activeChatId: '', notice: `Подключено. Список чатов загружается из ${messenger.name} API.` }); setSettingsOpen(false) }
   function addChat(id: string, name: string) { updateWorkspace((current) => { const chat = createChat(id, name); return { ...current, chats: current.chats.some((item) => item.id === id) ? current.chats : [chat, ...current.chats], messages: { ...current.messages, [id]: current.messages[id] || [] }, activeChatId: id, isHistoryLoading: current.connected } }); setCreateChatOpen(false) }
-  async function send(text: string) {
+  async function send(text: string, retryMessageId?: string) {
     const chatId = workspace.activeChatId
     if (!chatId) return
-    const message: Message = { id: createId(), mine: true, text, time: formatCurrentTime(), status: 'sending' }
-    updateWorkspace((current) => ({ ...current, messages: addMessage(current.messages, chatId, message), chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, last: text, time: message.time } : chat) }))
+    const previous = retryMessageId ? workspace.messages[chatId]?.find((message) => message.id === retryMessageId) : undefined
+    const message: Message = previous ? { ...previous, status: 'sending' } : { id: createId(), mine: true, text, time: formatCurrentTime(), status: 'sending' }
+    updateWorkspace((current) => ({ ...current, messages: previous ? updateMessageStatus(current.messages, chatId, message.id, 'sending') : addMessage(current.messages, chatId, message), chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, last: text, time: message.time, lastMine: true, lastStatus: 'sending' } : chat) }))
     if (isDemoChatId(messengerId, chatId)) {
       updateWorkspace((current) => ({ ...current, messages: updateMessageStatus(current.messages, chatId, message.id, 'sent') }))
       window.setTimeout(() => updateWorkspace((current) => ({ ...current, messages: updateMessageStatus(current.messages, chatId, message.id, 'read') })), demoReadDelay)
@@ -161,7 +263,7 @@ export function useMessenger() {
     }
     if (!client) return
     try {
-      const externalId = await client.sendMessage(chatId, text)
+      const externalId = await sendTextMutation.mutateAsync({ chatId, text })
       updateWorkspace((current) => ({
         ...current,
         messages: updateMessageStatus(
@@ -170,9 +272,29 @@ export function useMessenger() {
           message.id,
           'sent',
         ),
+        chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, lastMine: true, lastStatus: 'sent', lastExternalId: externalId || chat.lastExternalId } : chat),
       }))
     }
     catch (error) { updateWorkspace((current) => ({ ...current, messages: updateMessageStatus(current.messages, chatId, message.id, 'error'), notice: `Сообщение не отправлено: ${error instanceof Error ? error.message : 'неизвестная ошибка'}` })) }
+  }
+
+  async function attach(file: File) {
+    const chatId = workspace.activeChatId
+    if (!chatId) return
+    const message: Message = { id: createId(), mine: true, text: '', time: formatCurrentTime(), status: 'sending', attachment: { name: file.name, type: file.type || 'application/octet-stream', url: URL.createObjectURL(file) } }
+    updateWorkspace((current) => ({ ...current, messages: addMessage(current.messages, chatId, message), chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, last: `📎 ${file.name}`, time: message.time, lastMine: true, lastStatus: 'sending' } : chat) }))
+    if (isDemoChatId(messengerId, chatId)) { updateWorkspace((current) => ({ ...current, messages: updateMessageStatus(current.messages, chatId, message.id, 'sent') })); return }
+    if (!client) return
+    try {
+      const response = await sendFileMutation.mutateAsync({ chatId, file })
+      const externalId = response.idMessage
+      updateWorkspace((current) => ({ ...current, messages: updateMessageStatus(externalId ? updateMessageExternalId(current.messages, chatId, message.id, externalId) : current.messages, chatId, message.id, 'sent'), chats: current.chats.map((chat) => chat.id === chatId ? { ...chat, lastStatus: 'sent', lastExternalId: externalId || chat.lastExternalId } : chat) }))
+    } catch (error) { updateWorkspace((current) => ({ ...current, messages: updateMessageStatus(current.messages, chatId, message.id, 'error'), notice: `Вложение не отправлено: ${error instanceof Error ? error.message : 'неизвестная ошибка'}` })) }
+  }
+
+  function retry(messageId: string) {
+    const message = workspace.messages[workspace.activeChatId]?.find((item) => item.id === messageId)
+    if (message && !message.attachment) void send(message.text, message.id)
   }
 
   const sendTyping = useCallback(() => {
@@ -183,5 +305,5 @@ export function useMessenger() {
     void client.sendTyping(workspace.activeChatId).catch(() => undefined)
   }, [client, messengerId, workspace.activeChatId])
 
-  return { activeChat, activeChatId: workspace.activeChatId, canSend: Boolean(activeChat) && !workspace.isHistoryLoading && (workspace.connected || isDemoChatId(messengerId, workspace.activeChatId)), chats: visibleChats, connected: workspace.connected, createChatOpen, isChatsLoading: workspace.isChatsLoading, isHistoryLoading: workspace.isHistoryLoading, messages: workspace.messages[workspace.activeChatId] || [], messenger, messengerId, notice: workspace.notice, search: workspace.search, settings: workspace.settings, settingsOpen, addChat, connect, selectChat, selectMessenger, send, sendTyping, setCreateChatOpen, setSearch, setSettingsOpen }
+  return { activeChat, activeChatId: workspace.activeChatId, canSend: Boolean(activeChat) && !workspace.isHistoryLoading && (workspace.connected || isDemoChatId(messengerId, workspace.activeChatId)), chats: visibleChats, connected: workspace.connected, createChatOpen, isChatsLoading: workspace.isChatsLoading, isHistoryLoading: workspace.isHistoryLoading, messages: workspace.messages[workspace.activeChatId] || [], messenger, messengerId, notice: workspace.notice, search: workspace.search, settings: workspace.settings, settingsOpen, addChat, attach, connect, retry, selectChat, selectMessenger, send, sendTyping, setCreateChatOpen, setSearch, setSettingsOpen }
 }

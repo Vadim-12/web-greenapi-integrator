@@ -13,6 +13,8 @@ export function MessengerDialog({
 	canSend,
 	messengerName,
 	onSend,
+	onAttach,
+	onRetry,
 	onTyping,
 }: MessengerDialogProps) {
 	if (!chat)
@@ -47,7 +49,7 @@ export function MessengerDialog({
 				<Avatar {...chat} />
 				<div>
 					<b>{chat.name}</b>
-					<small>{connected ? 'в сети' : 'демо-диалог'}</small>
+					<small>{connected ? 'статус контакта недоступен' : 'демо-диалог'}</small>
 				</div>
 				<button
 					className='icon more'
@@ -68,7 +70,7 @@ export function MessengerDialog({
 					<i />
 				</div>
 			) : (
-				<MessageList messages={messages} />
+				<MessageList messages={messages} onRetry={onRetry} />
 			)}
 			<MessageComposer
 				chatId={chat.id}
@@ -76,6 +78,7 @@ export function MessengerDialog({
 				isLoading={isHistoryLoading}
 				messengerName={messengerName}
 				onSend={onSend}
+				onAttach={onAttach}
 				onTyping={onTyping}
 			/>
 		</section>

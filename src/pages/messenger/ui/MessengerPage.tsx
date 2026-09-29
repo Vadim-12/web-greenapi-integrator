@@ -1,11 +1,14 @@
 import { useEffect } from 'react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ConnectionModal } from '@/features/connect-instance/ui/ConnectionModal';
 import { CreateChatModal } from '@/features/create-chat/ui/CreateChatModal';
 import { MessengerDialog } from '@/widgets/messenger-dialog/ui/MessengerDialog';
 import { MessengerSidebar } from '@/widgets/messenger-sidebar/ui/MessengerSidebar';
 import { useMessenger } from '@/pages/messenger/model/useMessenger';
 
-export function MessengerPage() {
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 5_000 } } });
+
+function MessengerPageContent() {
 	const messenger = useMessenger();
 
 	useEffect(() => {
@@ -37,6 +40,8 @@ export function MessengerPage() {
 				canSend={messenger.canSend}
 				messengerName={messenger.messenger.name}
 				onSend={messenger.send}
+				onAttach={messenger.attach}
+				onRetry={messenger.retry}
 				onTyping={messenger.sendTyping}
 			/>
 			{messenger.settingsOpen && (
@@ -56,4 +61,8 @@ export function MessengerPage() {
 			)}
 		</main>
 	);
+}
+
+export function MessengerPage() {
+	return <QueryClientProvider client={queryClient}><MessengerPageContent /></QueryClientProvider>;
 }

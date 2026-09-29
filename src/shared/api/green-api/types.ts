@@ -8,8 +8,11 @@ export type GreenApiChat = {
   chatId?: string
   id?: string
   name?: string
+  type?: 'user' | 'group' | 'supergroup' | 'channel'
   unreadCount?: number
 }
+
+export type GreenApiAvatar = { urlAvatar?: string }
 
 export type GreenApiHistoryMessage = {
   idMessage?: string

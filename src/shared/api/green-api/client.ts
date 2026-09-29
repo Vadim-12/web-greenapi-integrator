@@ -1,11 +1,12 @@
-import type { GreenApiChat, GreenApiConfig, GreenApiHistoryMessage, GreenApiJournalMessage, GreenApiNotification, GreenApiSendMessageResponse } from '@/shared/api/green-api/types'
-import { parseJsonResponse } from '@/shared/lib/http/parseJsonResponse'
+import axios, { type AxiosRequestConfig } from 'axios'
+import type { GreenApiAvatar, GreenApiChat, GreenApiConfig, GreenApiHistoryMessage, GreenApiJournalMessage, GreenApiNotification, GreenApiSendMessageResponse } from '@/shared/api/green-api/types'
 import { trimTrailingSlash } from '@/shared/lib/string/trimTrailingSlash'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
 const requestTimeout = 15000
 const loadingRequestTimeout = 8000
 const rateLimitRetryDelay = 1100
+const defaultHistoryCount = 500
 
 export class GreenApiClient {
   private readonly config: GreenApiConfig
@@ -29,7 +30,7 @@ export class GreenApiClient {
     return Array.isArray(response) ? response : []
   }
 
-  async getChatHistory(chatId: string, count = 50): Promise<GreenApiHistoryMessage[]> {
+  async getChatHistory(chatId: string, count = defaultHistoryCount): Promise<GreenApiHistoryMessage[]> {
     const response = await this.retryAfterRateLimit(() => this.request('getChatHistory', {
       method: 'POST',
       headers: jsonHeaders,
@@ -38,10 +39,19 @@ export class GreenApiClient {
     return Array.isArray(response) ? response as GreenApiHistoryMessage[] : []
   }
 
-  async getRecentMessages(): Promise<GreenApiJournalMessage[]> {
+  async getAvatar(chatId: string): Promise<string | null> {
+    const response = await this.request('getAvatar', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ chatId }),
+    }, loadingRequestTimeout) as GreenApiAvatar
+    return typeof response.urlAvatar === 'string' && response.urlAvatar ? response.urlAvatar : null
+  }
+
+  async getRecentMessages(minutes = 1440): Promise<GreenApiJournalMessage[]> {
     const [incoming, outgoing] = await Promise.all([
-      this.retryAfterRateLimit(() => this.request('lastIncomingMessages?minutes=1440', { method: 'GET' }, loadingRequestTimeout)),
-      this.retryAfterRateLimit(() => this.request('lastOutgoingMessages?minutes=1440', { method: 'GET' }, loadingRequestTimeout)),
+      this.retryAfterRateLimit(() => this.request(`lastIncomingMessages?minutes=${minutes}`, { method: 'GET' }, loadingRequestTimeout)),
+      this.retryAfterRateLimit(() => this.request(`lastOutgoingMessages?minutes=${minutes}`, { method: 'GET' }, loadingRequestTimeout)),
     ])
     return [...(Array.isArray(incoming) ? incoming : []), ...(Array.isArray(outgoing) ? outgoing : [])] as GreenApiJournalMessage[]
   }
@@ -52,10 +62,7 @@ export class GreenApiClient {
   }
 
   async deleteNotification(receiptId: number): Promise<void> {
-    const { apiUrl, idInstance, apiTokenInstance } = this.config
-    const base = trimTrailingSlash(apiUrl)
-    const response = await this.fetchWithTimeout(`${base}/waInstance${idInstance}/deleteNotification/${apiTokenInstance}/${receiptId}`, { method: 'DELETE' }, requestTimeout)
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    await this.request(`deleteNotification/${receiptId}`, { method: 'DELETE' })
   }
 
   async sendTyping(chatId: string, typingTime = 2000): Promise<void> {
@@ -66,15 +73,38 @@ export class GreenApiClient {
     })
   }
 
+  async sendFile(chatId: string, file: File): Promise<GreenApiSendMessageResponse> {
+    const formData = new FormData()
+    formData.append('chatId', chatId)
+    formData.append('file', file)
+    formData.append('fileName', file.name)
+    return this.request('sendFileByUpload', { method: 'POST', body: formData }) as Promise<GreenApiSendMessageResponse>
+  }
+
   private async request(method: string, init?: RequestInit, timeout = requestTimeout, acceptedErrorStatuses: number[] = []): Promise<unknown> {
     const { apiUrl, idInstance, apiTokenInstance } = this.config
     const base = trimTrailingSlash(apiUrl)
     const [path, query] = method.split('?')
     const url = `${base}/waInstance${idInstance}/${path}/${apiTokenInstance}${query ? `?${query}` : ''}`
-    const response = await this.fetchWithTimeout(url, init, timeout)
-    if (!response.ok && !acceptedErrorStatuses.includes(response.status)) throw new Error(`HTTP ${response.status}`)
-    if (init?.method === 'DELETE') return undefined
-    return parseJsonResponse(response)
+    const config: AxiosRequestConfig = {
+      url,
+      method: init?.method || 'GET',
+      headers: init?.headers as AxiosRequestConfig['headers'],
+      data: init?.body,
+      signal: init?.signal || undefined,
+      timeout,
+      validateStatus: (status) => (status >= 200 && status < 300) || acceptedErrorStatuses.includes(status),
+    }
+    try {
+      const response = await axios.request(config)
+      return response.data ?? {}
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        if (error.code === 'ECONNABORTED' || error.code === 'ERR_CANCELED') throw new Error('Превышено время ожидания ответа API')
+        if (error.response) throw new Error(`HTTP ${error.response.status}`)
+      }
+      throw error
+    }
   }
 
   private async retryAfterRateLimit<T>(request: () => Promise<T>): Promise<T> {
@@ -87,20 +117,4 @@ export class GreenApiClient {
     }
   }
 
-  private async fetchWithTimeout(url: string, init: RequestInit | undefined, timeout: number): Promise<Response> {
-    const controller = new AbortController()
-    const externalSignal = init?.signal
-    const abortFromOutside = () => controller.abort()
-    externalSignal?.addEventListener('abort', abortFromOutside, { once: true })
-    const timeoutId = window.setTimeout(() => controller.abort(), timeout)
-    try {
-      return await fetch(url, { ...init, signal: controller.signal })
-    } catch (error) {
-      if (controller.signal.aborted) throw new Error('Превышено время ожидания ответа API')
-      throw error
-    } finally {
-      window.clearTimeout(timeoutId)
-      externalSignal?.removeEventListener('abort', abortFromOutside)
-    }
-  }
 }

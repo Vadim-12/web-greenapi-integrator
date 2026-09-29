@@ -27,6 +27,21 @@ describe('chat history mapper', () => {
     expect(previews.map(({ chatId, text }) => ({ chatId, text }))).toEqual([{ chatId: 'chat-1', text: 'Новое' }, { chatId: 'chat-2', text: 'Другой чат' }])
   })
 
+  it('корректно строит превью из истории открытого чата', () => {
+    const history = [
+      { chatId: 'chat-1', idMessage: 'new', timestamp: 20, textMessage: 'Последнее', type: 'outgoing', statusMessage: 'delivered' },
+      { chatId: 'chat-1', idMessage: 'old', timestamp: 10, textMessage: 'Первое', type: 'incoming' },
+    ]
+
+    expect(toChatPreviews(history)).toEqual([expect.objectContaining({
+      chatId: 'chat-1',
+      text: 'Последнее',
+      mine: true,
+      status: 'delivered',
+      externalId: 'new',
+    })])
+  })
+
   it('берёт из журнала только входящие сообщения для синхронизации', () => {
     const messages = toIncomingJournalMessages([
       { idMessage: 'in-1', type: 'incoming', chatId: 'chat-1', textMessage: 'Входящее' },

@@ -137,6 +137,14 @@ button {
 	font-size: 12px;
 	font-weight: 700;
 }
+
+.avatar img {
+	width: 100%;
+	height: 100%;
+	border-radius: inherit;
+	object-fit: cover;
+}
+
 .chat-info {
 	display: flex;
 	min-width: 0;
@@ -251,10 +259,16 @@ button {
 	display: flex;
 	flex: 1;
 	flex-direction: column;
-	justify-content: flex-end;
+	justify-content: flex-start;
 	gap: 7px;
 	overflow: auto;
 	padding: 65px 48px 20px;
+}
+
+/* Keep short histories near the composer without forcing long histories below it. */
+.messages::before {
+	margin-top: auto;
+	content: "";
 }
 .message {
 	align-self: flex-start;
@@ -742,6 +756,10 @@ body {
 .empty-dialog {
 	display: grid;
 	flex: 1;
+	grid-row: 1 / -1;
+	grid-column: 1;
+	align-self: stretch;
+	justify-self: stretch;
 	place-content: center;
 	padding: 24px;
 	color: #a8bdcc;
@@ -866,5 +884,95 @@ body {
 	box-shadow: 0 1px 3px #23699b55;
 	color: #fff;
 	font-size: 10px;
+	font-weight: 700;
+}
+
+.dialog,
+.messages {
+	min-height: 0;
+}
+
+.dialog {
+	height: 100%;
+	overflow: hidden;
+	display: grid;
+	grid-template-rows: 72px minmax(0, 1fr) auto;
+}
+
+.dialog-head,
+.composer {
+	flex: 0 0 auto;
+}
+
+.dialog-head {
+	grid-row: 1;
+}
+
+.messages {
+	grid-row: 2;
+	height: auto;
+	overflow-y: auto;
+	overscroll-behavior: contain;
+}
+
+.message-skeletons {
+	grid-row: 2;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.composer {
+	grid-row: 3;
+}
+
+.file-input {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	opacity: 0;
+	pointer-events: none;
+}
+
+.message-image {
+	display: block;
+	margin-bottom: 5px;
+}
+
+.message-image img {
+	display: block;
+	max-width: min(280px, 100%);
+	max-height: 240px;
+	border-radius: 8px;
+}
+
+.message-file {
+	display: block;
+	color: inherit;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.retry-message {
+	margin-top: 5px;
+	border: 0;
+	background: transparent;
+	color: #63a8df;
+	font-size: 11px;
+	font-weight: 700;
+}
+
+.chat-last-status {
+	margin-right: 3px;
+	color: #63a8df;
+	font-style: normal;
+	font-weight: 700;
+}
+
+.chat-last-status.error {
+	color: #f07178;
+}
+
+.chat-row.unread .chat-info b,
+.chat-row.unread .chat-info small {
 	font-weight: 700;
 }

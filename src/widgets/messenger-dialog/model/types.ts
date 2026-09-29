@@ -11,5 +11,7 @@ export type MessengerDialogProps = {
   canSend: boolean
   messengerName: string
   onSend: (text: string) => Promise<void>
+  onAttach: (file: File) => Promise<void>
+  onRetry: (messageId: string) => void
   onTyping: () => void
 }
