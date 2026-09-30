@@ -10,12 +10,35 @@ describe('chat history mapper', () => {
 
     expect(messages.map((message) => message.id)).toEqual(['old', 'new'])
     expect(messages[1].status).toBe('read')
+    expect(messages[1].externalId).toBe('new')
   })
 
   it('отличает доставленное сообщение от прочитанного', () => {
     const [message] = toMessages([{ idMessage: '1', type: 'outgoing', textMessage: 'Привет', statusMessage: 'delivered' }])
 
     expect(message.status).toBe('delivered')
+  })
+
+  it('преобразует медиа из истории в отображаемое вложение', () => {
+    const [message] = toMessages([{
+      idMessage: 'video-note',
+      type: 'incoming',
+      typeMessage: 'videoMessage',
+      downloadUrl: 'https://media.example/video.mp4',
+      fileName: 'video.mp4',
+      mimeType: 'video/mp4',
+      jpegThumbnail: 'aGVsbG8=',
+      videoNote: true,
+    }])
+
+    expect(message).toMatchObject({
+      text: '',
+      attachment: {
+        kind: 'video-note',
+        url: 'https://media.example/video.mp4',
+        thumbnailUrl: 'data:image/jpeg;base64,aGVsbG8=',
+      },
+    })
   })
 
   it('выбирает последнее сообщение каждого чата для списка диалогов', () => {

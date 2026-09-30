@@ -6,6 +6,7 @@ import type { MessengerDialogProps } from '@/widgets/messenger-dialog/model/type
 export function MessengerDialog({
 	chat,
 	messages,
+	hasOlderMessages,
 	connected,
 	isChatsLoading,
 	isHistoryLoading,
@@ -15,6 +16,8 @@ export function MessengerDialog({
 	onSend,
 	onAttach,
 	onRetry,
+	onRefreshAttachment,
+	onLoadOlder,
 	onTyping,
 }: MessengerDialogProps) {
 	if (!chat)
@@ -60,9 +63,11 @@ export function MessengerDialog({
 					⋮
 				</button>
 			</header>
-			<div className='notice' role='status'>
-				{notice}
-			</div>
+			{notice && (
+				<div className='notice' role='status'>
+					{notice}
+				</div>
+			)}
 			{isHistoryLoading ? (
 				<div className='message-skeletons' aria-label='Загрузка истории'>
 					<i />
@@ -70,7 +75,7 @@ export function MessengerDialog({
 					<i />
 				</div>
 			) : (
-				<MessageList messages={messages} onRetry={onRetry} />
+				<MessageList chat={chat} messages={messages} hasOlderMessages={hasOlderMessages} onLoadOlder={onLoadOlder} onRetry={onRetry} onRefreshAttachment={onRefreshAttachment} />
 			)}
 			<MessageComposer
 				chatId={chat.id}

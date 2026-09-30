@@ -1,12 +1,16 @@
 import axios, { type AxiosRequestConfig } from 'axios'
-import type { GreenApiAvatar, GreenApiChat, GreenApiConfig, GreenApiHistoryMessage, GreenApiJournalMessage, GreenApiNotification, GreenApiSendMessageResponse } from '@/shared/api/green-api/types'
+import type { GreenApiAvatar, GreenApiChat, GreenApiConfig, GreenApiDownloadFileResponse, GreenApiHistoryMessage, GreenApiJournalMessage, GreenApiNotification, GreenApiSendMessageResponse } from '@/shared/api/green-api/types'
 import { trimTrailingSlash } from '@/shared/lib/string/trimTrailingSlash'
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
 const requestTimeout = 15000
 const loadingRequestTimeout = 8000
 const rateLimitRetryDelay = 1100
-const defaultHistoryCount = 500
+const defaultHistoryCount = 10_000
+const defaultChatsCount = 1000
+const constrainedMethodInterval = 1100
+const methodQueues = new Map<string, Promise<void>>()
+const methodLastStartedAt = new Map<string, number>()
 
 export class GreenApiClient {
   private readonly config: GreenApiConfig
@@ -25,17 +29,17 @@ export class GreenApiClient {
     return typeof idMessage === 'string' ? idMessage : null
   }
 
-  async getChats(): Promise<GreenApiChat[]> {
-    const response = await this.retryAfterRateLimit(() => this.request('getChats', { method: 'GET' }, loadingRequestTimeout))
+  async getChats(count = defaultChatsCount): Promise<GreenApiChat[]> {
+    const response = await this.runRateLimited('getChats', () => this.retryAfterRateLimit(() => this.request(`getChats?count=${count}`, { method: 'GET' }, loadingRequestTimeout)))
     return Array.isArray(response) ? response : []
   }
 
   async getChatHistory(chatId: string, count = defaultHistoryCount): Promise<GreenApiHistoryMessage[]> {
-    const response = await this.retryAfterRateLimit(() => this.request('getChatHistory', {
+    const response = await this.runRateLimited('getChatHistory', () => this.retryAfterRateLimit(() => this.request('getChatHistory', {
       method: 'POST',
       headers: jsonHeaders,
       body: JSON.stringify({ chatId, count }),
-    }, loadingRequestTimeout))
+    }, loadingRequestTimeout)))
     return Array.isArray(response) ? response as GreenApiHistoryMessage[] : []
   }
 
@@ -45,7 +49,17 @@ export class GreenApiClient {
       headers: jsonHeaders,
       body: JSON.stringify({ chatId }),
     }, loadingRequestTimeout) as GreenApiAvatar
-    return typeof response.urlAvatar === 'string' && response.urlAvatar ? response.urlAvatar : null
+    const urlAvatar = typeof response.urlAvatar === 'string' && response.urlAvatar ? response.urlAvatar : null
+    return urlAvatar
+  }
+
+  async getFileDownloadUrl(chatId: string, idMessage: string): Promise<string | null> {
+    const response = await this.runRateLimited('downloadFile', () => this.request('downloadFile', {
+      method: 'POST',
+      headers: jsonHeaders,
+      body: JSON.stringify({ chatId, idMessage }),
+    }, loadingRequestTimeout)) as GreenApiDownloadFileResponse
+    return typeof response.downloadUrl === 'string' && response.downloadUrl ? response.downloadUrl : null
   }
 
   async getRecentMessages(minutes = 1440): Promise<GreenApiJournalMessage[]> {
@@ -115,6 +129,20 @@ export class GreenApiClient {
       await new Promise<void>((resolve) => window.setTimeout(resolve, rateLimitRetryDelay))
       return request()
     }
+  }
+
+  private runRateLimited<T>(method: string, request: () => Promise<T>): Promise<T> {
+    const instanceKey = `${trimTrailingSlash(this.config.apiUrl)}:${this.config.idInstance}:${method}`
+    const previous = methodQueues.get(instanceKey) || Promise.resolve()
+    const run = async () => {
+      const wait = constrainedMethodInterval - (Date.now() - (methodLastStartedAt.get(instanceKey) || 0))
+      if (wait > 0) await new Promise<void>((resolve) => window.setTimeout(resolve, wait))
+      methodLastStartedAt.set(instanceKey, Date.now())
+      return request()
+    }
+    const result = previous.then(run, run)
+    methodQueues.set(instanceKey, result.then(() => undefined, () => undefined))
+    return result
   }
 
 }

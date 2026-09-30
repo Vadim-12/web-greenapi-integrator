@@ -10,6 +10,7 @@ export type MessengerWorkspace = {
   isHistoryLoading: boolean
   chats: Chat[]
   messages: Record<string, Message[]>
+  hasOlderMessages: Record<string, boolean>
   activeChatId: string
   search: string
   notice: string

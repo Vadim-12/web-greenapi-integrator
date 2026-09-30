@@ -17,6 +17,7 @@ describe('GreenApiClient', () => {
   it('получает список чатов', async () => {
     requestMock.mockResolvedValue({ data: [{ chatId: '123', name: 'Иван' }] })
     await expect(client.getChats()).resolves.toEqual([{ chatId: '123', name: 'Иван' }])
+    expect(requestMock).toHaveBeenCalledWith(expect.objectContaining({ url: 'https://1100.api.green-api.com/waInstance1100/getChats/secret?count=1000' }))
   })
 
   it('запрашивает расширенную историю чата по умолчанию', async () => {
@@ -27,7 +28,7 @@ describe('GreenApiClient', () => {
     expect(requestMock).toHaveBeenCalledWith(expect.objectContaining({
       url: 'https://1100.api.green-api.com/waInstance1100/getChatHistory/secret',
       method: 'POST',
-      data: JSON.stringify({ chatId: '123', count: 500 }),
+      data: JSON.stringify({ chatId: '123', count: 10_000 }),
     }))
   })
 

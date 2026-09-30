@@ -89,15 +89,19 @@ test('восстанавливает настройки инстанса пос�
 })
 
 test('после подключения заменяет демо-чаты списком из API', async ({ page }) => {
+  let requestedHistoryBody = ''
   await page.route('**/receiveNotification**', async (route) => {
     await new Promise((resolve) => setTimeout(resolve, 5000))
     await route.fulfill({ status: 200, contentType: 'application/json', body: '{}' })
   })
-  await page.route('**/getChats/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ chatId: '12345678', name: 'Реальный чат' }]) }))
-  await page.route('**/getChatHistory/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
+  await page.route('**/getChats/**', (route) => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([{ id: 'устаревший@lid', newChatId: 'актуальный@lid', name: 'Реальный чат' }]) }))
+  await page.route('**/getChatHistory/**', (route) => {
+    requestedHistoryBody = route.request().postData() || ''
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify([
     { idMessage: 'new', type: 'outgoing', timestamp: 1735725660, textMessage: 'Ответ из истории', statusMessage: 'read' },
     { idMessage: 'old', type: 'incoming', timestamp: 1735725600, textMessage: 'Сообщение из истории' },
-  ]) }))
+    ]) })
+  })
   await page.goto('/')
   await expect(page.locator('.chat-list').getByText('Алексей Смирнов')).toBeVisible()
 
@@ -110,6 +114,7 @@ test('после подключения заменяет демо-чаты сп�
   await expect(page.locator('.chat-list').getByText('Алексей Смирнов')).not.toBeVisible()
   await expect(page.getByRole('heading', { name: 'Выберите чат' })).toBeVisible()
   await page.locator('.chat-list').getByText('Реальный чат').click()
+  await expect.poll(() => requestedHistoryBody).toContain('актуальный@lid')
   await expect(page.locator('.messages').getByText('Сообщение из истории')).toBeVisible()
   await expect(page.locator('.messages').getByText('Ответ из истории')).toBeVisible()
 
@@ -141,7 +146,7 @@ test('показывает скелетоны во время загрузки �
   await expect(page.getByRole('complementary').getByLabel('Загрузка чатов')).toBeVisible()
   await page.getByText('Чат со скелетоном').click()
   await expect(page.getByLabel('Загрузка истории')).toBeVisible()
-  await expect(page.getByText('История загружена')).toBeVisible()
+  await expect(page.locator('.messages').getByText('История загружена')).toBeVisible()
 })
 
 test('переводит фокус в модалку и удерживает Tab-навигацию внутри неё', async ({ page }) => {

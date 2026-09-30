@@ -18,4 +18,9 @@ describe('message model', () => {
     const result = updateMessageStatusByExternalId(withExternalId, 'chat-1', 'green-id', 'error')
     expect(result['chat-1'][0]).toMatchObject({ externalId: 'green-id', status: 'error' })
   })
+
+  it('обновляет статус сообщения из истории по id GREEN-API', () => {
+    const result = updateMessageStatusByExternalId({ 'chat-1': [{ id: 'history-id', mine: true, text: 'Привет', time: '12:00', status: 'sent' }] }, 'chat-1', 'history-id', 'read')
+    expect(result['chat-1'][0].status).toBe('read')
+  })
 })

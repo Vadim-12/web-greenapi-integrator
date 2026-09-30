@@ -33,6 +33,7 @@ function MessengerPageContent() {
 			<MessengerDialog
 				chat={messenger.activeChat}
 				messages={messenger.messages}
+				hasOlderMessages={messenger.hasOlderMessages}
 				connected={messenger.connected}
 				isChatsLoading={messenger.isChatsLoading}
 				isHistoryLoading={messenger.isHistoryLoading}
@@ -42,6 +43,8 @@ function MessengerPageContent() {
 				onSend={messenger.send}
 				onAttach={messenger.attach}
 				onRetry={messenger.retry}
+				onRefreshAttachment={messenger.refreshAttachment}
+				onLoadOlder={messenger.loadOlderMessages}
 				onTyping={messenger.sendTyping}
 			/>
 			{messenger.settingsOpen && (
