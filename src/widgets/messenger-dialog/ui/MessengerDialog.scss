@@ -1,0 +1,151 @@
+.dialog {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  flex: 1;
+  grid-template-rows: 72px minmax(0, 1fr) auto;
+  overflow: hidden;
+  background-color: #0e1621;
+  background-image:
+    radial-gradient(#27415770 1px, transparent 1px), radial-gradient(#142432aa 1px, transparent 1px);
+  background-position:
+    0 0,
+    10px 10px;
+  background-size: 20px 20px;
+}
+
+.dialog-head {
+  display: flex;
+  grid-row: 1;
+  align-items: center;
+  gap: 12px;
+  height: 72px;
+  padding: 0 24px;
+  border-bottom: 1px solid #0e1720;
+  background: #17212b;
+
+  div {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+  b {
+    overflow: hidden;
+    color: #f1f7fb;
+    font-size: 14px;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  small {
+    color: #7fa6c4;
+    font-size: 11px;
+  }
+}
+
+.more {
+  margin-left: auto;
+}
+.notice {
+  position: absolute;
+  z-index: 1;
+  top: 87px;
+  left: 50%;
+  max-width: 85%;
+  padding: 7px 12px;
+  transform: translateX(-50%);
+  border-radius: 15px;
+  background: #2a465de8;
+  box-shadow: 0 2px 9px #0006;
+  color: #e1edf5;
+  font-size: 11px;
+  text-align: center;
+}
+.empty-dialog {
+  display: grid;
+  grid-row: 1 / -1;
+  grid-column: 1;
+  flex: 1;
+  align-self: stretch;
+  justify-self: stretch;
+  place-content: center;
+  padding: 24px;
+  color: #a8bdcc;
+  text-align: center;
+  h1 {
+    margin: 0 0 8px;
+    color: #eff7fb;
+    font-size: 20px;
+  }
+  p {
+    max-width: 300px;
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+}
+
+.message-skeletons {
+  display: grid;
+  grid-row: 2;
+  min-height: 0;
+  align-content: end;
+  gap: 10px;
+  overflow-y: auto;
+  padding: 65px 48px 20px;
+  i {
+    display: block;
+    width: min(320px, 70%);
+    height: 42px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #223243 25%, #2c4054 38%, #223243 63%);
+    background-size: 300% 100%;
+    animation: dialog-skeleton 1.2s ease-in-out infinite;
+    &:nth-child(2) {
+      justify-self: end;
+      width: min(260px, 60%);
+    }
+  }
+}
+.dialog-skeleton {
+  display: grid;
+  gap: 10px;
+  width: min(300px, 80vw);
+  i {
+    display: block;
+    height: 14px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #223243 25%, #2c4054 38%, #223243 63%);
+    background-size: 300% 100%;
+    animation: dialog-skeleton 1.2s ease-in-out infinite;
+    &:nth-child(2) {
+      width: 78%;
+    }
+    &:nth-child(3) {
+      width: 55%;
+    }
+  }
+}
+
+@keyframes dialog-skeleton {
+  to {
+    background-position: -300% 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .dialog-head {
+    padding: 0 15px;
+
+    .more {
+      width: 44px;
+      height: 44px;
+    }
+  }
+  .notice {
+    font-size: 10px;
+  }
+}

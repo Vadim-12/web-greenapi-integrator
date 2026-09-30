@@ -1,0 +1,68 @@
+.composer {
+  display: flex;
+  grid-row: 3;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
+  margin: 0 24px 20px;
+  padding: 6px 9px;
+  border: 1px solid #263846;
+  border-radius: 11px;
+  background: #17212b;
+  box-shadow: 0 1px 2px #0004;
+
+  input {
+    min-width: 0;
+    height: 38px;
+    flex: 1;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #eff7fb;
+    font-size: 13px;
+    &::placeholder {
+      color: #7d92a3;
+    }
+  }
+  button {
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: #8ba2b4;
+    font-size: 20px;
+  }
+  .send {
+    background: #3390ec;
+    color: #fff;
+    font-size: 15px;
+    transform: rotate(-25deg);
+    &:hover {
+      background: #3d6d99;
+    }
+    &:disabled {
+      background: #30495d;
+      color: #71899a;
+    }
+  }
+}
+
+.file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+@media (max-width: 720px) {
+  .composer {
+    min-height: 52px;
+    margin: 0 12px 12px;
+
+    button {
+      width: 40px;
+      height: 40px;
+    }
+  }
+}

@@ -1,1 +1,1 @@
-export const trimTrailingSlash = (value: string) => value.replace(/\/$/, '')
+export const trimTrailingSlash = (value: string) => value.replace(/\/$/, '');

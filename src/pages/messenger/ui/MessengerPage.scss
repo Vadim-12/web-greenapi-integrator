@@ -1,0 +1,85 @@
+.app-shell {
+  display: flex;
+  width: min(1280px, 100vw);
+  min-height: 620px;
+  height: min(860px, 100vh);
+  margin: 0 auto;
+  overflow: hidden;
+  background: #17212b;
+  box-shadow: 0 20px 65px #00000070;
+
+  &[data-messenger='whatsapp'] {
+    background: #111b21;
+
+    .sidebar,
+    .dialog-head,
+    .composer,
+    .modal {
+      background: #111b21;
+    }
+    .messenger-mark,
+    .composer .send,
+    .primary {
+      background: #00a884;
+    }
+    .messenger-mark {
+      transform: none;
+    }
+    .new-chat,
+    .messenger-switcher button.selected,
+    .chat-row.active {
+      background: #103529;
+    }
+    .dialog {
+      background-color: #0b141a;
+      background-image: radial-gradient(#1f363c85 1px, transparent 1px);
+    }
+    .message.mine {
+      background: #005c4b;
+    }
+    .connection {
+      border-color: #20333a;
+    }
+  }
+
+  &[data-messenger='max'] {
+    background: #17172a;
+
+    .sidebar,
+    .dialog-head,
+    .composer,
+    .modal {
+      background: #1c1c34;
+    }
+    .messenger-mark,
+    .composer .send,
+    .primary {
+      background: #7465f4;
+    }
+    .messenger-mark {
+      transform: none;
+    }
+    .new-chat,
+    .messenger-switcher button.selected,
+    .chat-row.active {
+      background: #39355f;
+    }
+    .dialog {
+      background-color: #141426;
+      background-image: radial-gradient(#37325e80 1px, transparent 1px);
+    }
+    .message.mine {
+      background: #3d3b70;
+    }
+    .connection {
+      border-color: #2b2a4a;
+    }
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    min-height: 100vh;
+    height: 100vh;
+  }
+}
